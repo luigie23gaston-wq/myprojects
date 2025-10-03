@@ -21,6 +21,13 @@
                     <a href="{{ route('landing') }}" class="nav-item">Home</a>
                 </div>
                 <div class="user-menu">
+                    <div class="user-profile-image">
+                        @if(Auth::user()->image)
+                            <img src="{{ asset('storage/' . Auth::user()->image) }}" alt="Profile">
+                        @else
+                            <div class="user-profile-placeholder">{{ strtoupper(substr(Auth::user()->firstname, 0, 1)) }}</div>
+                        @endif
+                    </div>
                     <span class="username" id="displayUsername">{{ Auth::user()->username }}</span>
                     <div style="position: relative;">
                         <span class="gear-icon" id="gearIcon">⚙️</span>

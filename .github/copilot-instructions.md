@@ -1,7 +1,7 @@
 # Copilot Instructions for Laravel Chat Application
 
 ## Project Overview
-This is a Laravel 10 application (PHP 8.1+) with Vite-powered frontend assets. The project uses a hybrid approach: Laravel Blade views with embedded vanilla JavaScript/CSS for interactive UI components, rather than a separate SPA framework.
+This is a Laravel 10 application (PHP 8.1+) with Vite-powered frontend assets. The project uses a hybrid approach: Laravel Blade views with vanilla JavaScript/CSS for interactive real-time chat functionality, rather than a separate SPA framework.
 
 ## Architecture & Structure
 
@@ -9,231 +9,323 @@ This is a Laravel 10 application (PHP 8.1+) with Vite-powered frontend assets. T
 - **Critical Convention**: CSS and JavaScript are separated into external files in `public/css/` and `public/js/`
 - Link CSS files in the `<head>` using: `<link rel="stylesheet" href="{{ asset('css/filename.css') }}">`
 - Link JS files before closing `</body>` using: `<script src="{{ asset('js/filename.js') }}"></script>`
+- Favicon in all pages: `<link rel="icon" type="image/png" href="{{ asset('YlaChat.png') }}">`
 - Views use vanilla JavaScript with modern DOM manipulation, not jQuery or frontend frameworks
 - Always include CSRF token meta tag: `<meta name="csrf-token" content="{{ csrf_token() }}">`
-- **File Structure**:
-  - `public/css/auth.css` - Authentication page styles
-  - `public/css/landing.css` - Landing page styles
-  - `public/js/auth.js` - Authentication logic (login/register with API calls)
-  - `public/js/landing.js` - Landing page logic (logout functionality)
-  - `resources/views/welcome.blade.php` - Login/Register HTML
-  - `resources/views/landing.blade.php` - Landing page HTML
-
-### Authentication Flow (Backend Integration)
-- **Real Authentication**: Uses Laravel's Auth system with database storage
-- Login/Register forms send AJAX requests to backend controllers
-- Toast notifications show success/error messages
-- Button states change: "Login" → "Logging in..." → "Redirecting..."
-- After successful auth, redirects to `/landing` route
-- Landing page protected by `auth` middleware
-- Login/Register pages protected by `guest` middleware (redirects if already logged in)
-- Back button prevention using `prevent.back` middleware and JavaScript
-- Cache control headers prevent browser from caching authenticated pages
-- **User Model Fields**: username, firstname, lastname, name, email, password, image (nullable)
-- Passwords are hashed using Laravel's Hash facade
 
 ### Key File Locations
 ```
-resources/views/welcome.blade.php   # Login/Register page (HTML only)
-resources/views/landing.blade.php   # Landing page (HTML only)
-resources/views/profile.blade.php   # Profile page with image upload & info editing
-public/css/auth.css                 # Auth page styles + toast notifications
-public/css/landing.css              # Landing page styles + modal
-public/css/profile.css              # Profile page styles + modals
-public/js/auth.js                   # Auth logic with fetch API calls
-public/js/landing.js                # Landing page logic with logout
-public/js/profile.js                # Profile page logic with image upload & history
-routes/web.php                      # Route definitions with auth middleware
-app/Http/Controllers/AuthController.php     # Handles login, register, logout
-app/Http/Controllers/ProfileController.php  # Handles profile operations
-app/Models/User.php                 # User model with custom fields
-app/Models/ImageHistory.php         # Image upload history model
-database/migrations/                # Database schema definitions
-database/database.sqlite            # SQLite database file
-storage/app/public/profile_images/  # Uploaded profile images
+resources/views/
+  ├── welcome.blade.php   # Login/Register page (HTML only)
+  ├── landing.blade.php   # Chat interface with sidebar, message area, settings
+  └── profile.blade.php   # Profile page with image upload & editing
+
+public/css/
+  ├── auth.css           # Authentication page styles + toast notifications
+  ├── landing.css        # Chat interface styles + navbar + modals + responsive design
+  └── profile.css        # Profile page styles + navbar + modals
+
+public/js/
+  ├── auth.js            # Authentication logic with fetch API calls
+  ├── landing.js         # Chat logic: messaging, long polling, settings, localStorage
+  └── profile.js         # Profile logic with image upload & history
+
+app/Http/Controllers/
+  ├── AuthController.php      # Handles login, register, logout
+  ├── ProfileController.php   # Handles profile operations
+  ├── ChatController.php      # Message CRUD, conversations, search
+  └── LongPollController.php  # Cache/Redis-based polling (0 DB queries in loop)
+
+app/Services/
+  └── MessageService.php      # Centralized messaging with Cache notifications
+
+app/Models/
+  ├── User.php               # username, firstname, lastname, email, password, image
+  ├── Message.php            # sender_id, receiver_id, message, created_at
+  ├── Conversation.php       # user_id, contact_id, last_message_at
+  └── ImageHistory.php       # user_id, image_path, created_at
+
+database/
+  ├── database.sqlite        # SQLite database file
+  └── migrations/            # Schema definitions
 ```
 
-## Development Workflows
+## Chat Messaging Architecture (Cache/Redis-Based Long Polling)
 
-### Database Setup & Migrations
-```bash
-# Create SQLite database (already configured)
-New-Item -Path "database\database.sqlite" -ItemType File -Force
+### Critical Performance Pattern
+**Never poll the database directly** - use Cache/Redis as notification layer:
 
-# Run migrations
-php artisan migrate
-
-# Rollback last migration
-php artisan migrate:rollback
-
-# Create new migration
-php artisan make:migration migration_name
-```
-
-### Build & Asset Compilation
-```bash
-# Frontend asset compilation (Vite)
-npm run dev          # Development with hot reload
-npm run build        # Production build
-
-# Laravel artisan commands (standard)
-php artisan serve    # Start development server
-php artisan migrate  # Run database migrations
-php artisan tinker   # Interactive PHP REPL
-```
-
-### Testing
-```bash
-php artisan test              # Run PHPUnit tests
-./vendor/bin/phpunit          # Direct PHPUnit execution
-./vendor/bin/pint             # Laravel Pint code formatting
-```
-
-## Project-Specific Conventions
-
-### UI Design System
-- **Color Palette**: 
-  - Background gradient: Green (#28a745) to Sky Blue (#87ceeb)
-  - Cards: Dark gray (#4a4a4a)
-  - Inputs: Black (#2a2a2a)
-  - Accents: Sky blue (#87ceeb), Green (#28a745)
-- **Component Pattern**: Floating card divs with shadow effects and rounded corners
-- **Modal Pattern**: Overlay with centered content card, click-outside to close
-
-### Form Validation Pattern
-```javascript
-// Real-time client-side validation
-function validateForm() {
-    const allFieldsValid = field1.length >= 3 && field2.length >= 3;
-    submitBtn.disabled = !allFieldsValid;
+```php
+// ❌ WRONG - Database polling (heavy load)
+while ($timeout) {
+    $messages = Message::where(...)->get(); // 10+ queries per cycle!
+    if ($messages->isNotEmpty()) return $messages;
+    sleep(1);
 }
-input.addEventListener('input', validateForm);
 
-// Server-side validation with fetch API
-fetch('/endpoint', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': csrfToken
-    },
-    body: JSON.stringify(data)
-})
-.then(response => response.json())
-.then(data => {
-    if (data.success) {
-        showToast(data.message);
-        // Redirect after success
+// ✅ CORRECT - Cache/Redis notification polling
+while ($timeout) {
+    $hasNotification = Cache::get("chat:user:{$userId}:new_messages");
+    if ($hasNotification) {
+        Cache::forget($key); // Clear flag
+        return ['has_new_messages' => true];
+    }
+    sleep(1);
+}
+```
+
+### MessageService Pattern
+**Always use MessageService** for sending messages - it automatically handles Cache notifications:
+
+```php
+// In Controller
+use App\Services\MessageService;
+
+public function sendMessage(Request $request, MessageService $messageService)
+{
+    $message = $messageService->sendMessage(
+        Auth::id(),
+        $request->receiver_id,
+        $request->message
+    );
+    // MessageService automatically sets Cache notification for receiver
+    return response()->json(['success' => true, 'message' => $message]);
+}
+```
+
+### Frontend Long Polling Pattern (landing.js)
+Separated "wait loop" from "data fetch":
+
+```javascript
+// 1. Lightweight polling - checks Cache only (no DB queries)
+function pollForMessages(lastId) {
+    fetch(`/api/long-poll?last_id=${lastId}&user_id=${currentChatUserId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.has_new_messages) {
+                fetchAndDisplayMessages(lastMessageId); // Separate DB query
+            } else {
+                pollForMessages(lastMessageId); // Continue polling
+            }
+        });
+}
+
+// 2. Actual data fetch - only when notified
+function fetchAndDisplayMessages(lastId) {
+    fetch(`/api/chat/fetch-since?last_id=${lastId}&user_id=${currentChatUserId}`)
+        .then(response => response.json())
+        .then(data => {
+            data.messages.forEach(msg => appendMessage(msg, isOwn, senderData));
+            pollForMessages(newLastId); // Resume polling
+        });
+}
+```
+
+## Chat Interface Features (landing.blade.php)
+
+### User Customization with localStorage Persistence
+All settings persist across page reloads using localStorage:
+
+1. **User Status** (`userStatusIndicator`)
+   - Options: 🟢 Online, 🔴 Busy, ⚫ Offline
+   - Stored: `localStorage.getItem('userStatus')`
+   - Displayed in navbar left of profile image
+
+2. **Bubble Color Customization** (`bubbleColorModal`)
+   - Background color and text color pickers
+   - Applied with `!important` via dynamic `<style>` injection
+   - Stored: `localStorage.getItem('bubbleBgColor')`, `bubbleTextColor`
+
+3. **Appearance Customization** (`appearanceModal`)
+   - Sidebar and chat area background colors
+   - Applied using `setProperty('background', color, 'important')`
+   - Must set both `background` and `background-color` to override CSS shorthand
+   - Stored: `localStorage.getItem('sidebarBgColor')`, `chatBgColor`
+
+### Settings Dropdown Pattern
+```javascript
+// Settings button with dropdown
+const settingsDropdown = document.getElementById('settingsDropdown');
+settingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsDropdown.classList.toggle('hidden');
+});
+
+// Close on outside click
+document.addEventListener('click', (e) => {
+    if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
+        settingsDropdown.classList.add('hidden');
     }
 });
 ```
 
-### Toast Notification Pattern
+### Message Display Pattern
+- **Alignment**: Incoming (left), Outgoing (right) - never centered
+- **Width**: `max-width: min(800px, 85%)` with `min-width: 280px` for ~30 characters
+- **Avatars**: 32px circular, gradient placeholders for missing images
+- **Responsive**: Mobile uses `max-width: 90%`, `min-width: 200px`
+
 ```javascript
-function showToast(message, type = 'success') {
-    toast.textContent = message;
-    toast.className = 'toast show';
-    if (type === 'error') toast.classList.add('error');
-    setTimeout(() => toast.classList.remove('show'), 3000);
+function appendMessage(message, isOwn, senderData) {
+    const messageEl = document.createElement('div');
+    messageEl.className = `message ${isOwn ? 'outgoing' : 'incoming'}`;
+    
+    const avatar = senderData.image 
+        ? `<img src="/storage/${senderData.image}" alt="${senderData.username}">`
+        : `<div class="message-avatar-placeholder">${senderData.initial}</div>`;
+    
+    messageEl.innerHTML = `
+        <div class="message-avatar">${avatar}</div>
+        <div class="message-content">
+            <div class="message-bubble">
+                <div class="message-text">${escapeHtml(message.message)}</div>
+                <div class="message-timestamp">${formatTime(message.created_at)}</div>
+            </div>
+        </div>
+    `;
+    messageArea.appendChild(messageEl);
 }
 ```
 
-### Password Strength Logic
-Implements multi-factor strength checking:
-- Length (8+ chars)
-- Mixed case detection
-- Number presence
-- Special character detection
-- Visual feedback with color coding (weak/medium/strong)
+## State Management Pattern
+- **No state library** - pure DOM manipulation with vanilla JavaScript
+- **localStorage** for user preferences (status, colors, appearance)
+- **Global variables** for chat state: `currentChatUserId`, `currentChatUserData`, `lastMessageId`, `isPolling`
+- **CSS classes** for UI state: `.hidden`, `.active`, `.show`, `.selected`
+- **Event delegation** for dynamically generated content (conversation list, message search)
 
-### State Management Pattern
-- Uses CSS `.hidden` class for show/hide toggling
-- Page sections (auth vs landing) switched via class manipulation
-- No state management library - pure DOM manipulation
-- Event delegation for dropdown menus and modals
-
-## Key Dependencies
-- **Laravel 10**: Framework core
-- **Laravel Sanctum**: API token authentication (configured but not actively used in current UI)
-- **Vite**: Asset bundler (configured in `vite.config.js`)
-- **Axios**: HTTP client (available but not used in current implementation)
-
-## Important Notes
-- **Database**: SQLite configured in `.env` (easier development setup)
-- **Authentication**: Fully integrated with Laravel Auth system
-- **Session Management**: Uses Laravel's session middleware
-- **CSRF Protection**: All POST requests require CSRF token
-- **Responsive Design**: Uses percentage-based widths and max-width constraints (e.g., `max-width: 600px` for auth cards)
-- **Browser Compatibility**: Uses modern ES6+ JavaScript (arrow functions, template literals, const/let, fetch API)
-
-## Common Tasks
-
-### Adding a New Blade View
-1. Create HTML structure in `resources/views/filename.blade.php`
-2. Add CSRF meta tag: `<meta name="csrf-token" content="{{ csrf_token() }}">`
-3. Create CSS file in `public/css/filename.css`
-4. Create JS file in `public/js/filename.js`
-5. Link assets: `<link rel="stylesheet" href="{{ asset('css/filename.css') }}">` and `<script src="{{ asset('js/filename.js') }}"></script>`
-6. Add route in `routes/web.php`: `Route::get('/path', [Controller::class, 'method'])->name('route.name');`
-7. Add middleware if authentication required: `->middleware('auth')`
-
-### Profile Page Features
-- **Two-Card Layout**: Left card (profile image) + Right card (user info)
-- **Image Upload**: Max 10MB, supports jpeg/png/jpg/gif
-- **Upload History**: Tracks all uploaded images with date/time
-- **History Modal**: View past uploads and select as current profile image
-- **Editable Fields**: Firstname, lastname, email, password change
-- **Real-time Validation**: File size checking, password matching
-- **Toast Notifications**: Success/error feedback for all operations
-
-### Image Upload Pattern
-```php
-// Controller
-$image = $request->file('image');
-$imagePath = $image->storeAs('profile_images', $imageName, 'public');
-
-// Save to history
-ImageHistory::create([
-    'user_id' => $user->id,
-    'image_path' => $imagePath,
-]);
-
-// Update user
-$user->image = $imagePath;
-$user->save();
-
-// Access in Blade
-<img src="{{ asset('storage/' . Auth::user()->image) }}" alt="Profile">
+## Navbar Pattern (All Authenticated Pages)
+```blade
+<nav class="navbar">
+    <div class="navbar-left">
+        <div class="navbar-logo">
+            <img src="{{ asset('YlaChat.png') }}" alt="YlaChat">
+        </div>
+        <a href="{{ route('landing') }}" class="nav-item">Home</a>
+    </div>
+    <div class="user-menu">
+        <span class="user-status-indicator" id="userStatusIndicator">🟢 Online</span>
+        <div class="user-profile-image">
+            @if(Auth::user()->image)
+                <img src="{{ asset('storage/' . Auth::user()->image) }}" alt="Profile">
+            @else
+                <div class="user-profile-placeholder">{{ strtoupper(substr(Auth::user()->firstname, 0, 1)) }}</div>
+            @endif
+        </div>
+        <span class="username">{{ Auth::user()->username }}</span>
+        <div style="position: relative;">
+            <span class="gear-icon" id="gearIcon">⚙️</span>
+            <div class="dropdown hidden" id="dropdown">
+                <a href="{{ route('profile') }}">Profile</a>
+                <a href="#" id="logoutLink">Logout</a>
+            </div>
+        </div>
+    </div>
+</nav>
 ```
 
-### Adding Authentication to Routes
-```php
-// Protected route (requires login)
-Route::get('/dashboard', [Controller::class, 'index'])->middleware('auth');
+## Modal Pattern
+All modals use consistent structure with backdrop click-to-close:
 
-// Get authenticated user in controller
-$user = Auth::user();
+```javascript
+// Show modal
+statusModal.classList.add('active');
 
-// Get user data in Blade
-{{ Auth::user()->username }}
-{{ Auth::user()->firstname }}
+// Hide on backdrop click
+statusModal.addEventListener('click', (e) => {
+    if (e.target === statusModal) {
+        statusModal.classList.remove('active');
+    }
+});
+
+// CSS
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 2000;
+    background-color: rgba(0, 0, 0, 0.8);
+}
+.modal.active { display: flex; }
 ```
 
-### Modifying Authentication UI
-- Edit HTML in `resources/views/welcome.blade.php`
-- Edit styles in `public/css/auth.css`
-- Edit JavaScript in `public/js/auth.js`
-- Backend logic in `app/Http/Controllers/AuthController.php`
-- Validation rules in AuthController methods
+### Modal Types
+- **Logout Confirmation**: Simple yes/no
+- **Status Selection**: 3 status options with selection state
+- **Bubble Color**: 2 color pickers with apply/cancel
+- **Appearance**: 2 color pickers for sidebar/chat backgrounds
+- **Trash Confirmation**: Delete conversation with danger styling
 
-### Adding Database Fields
-1. Create migration: `php artisan make:migration add_fields_to_table --table=tablename`
-2. Define fields in migration's `up()` method
-3. Add fields to model's `$fillable` array
-4. Run migration: `php artisan migrate`
+## Authentication Flow
+- **Middleware**: `guest` (redirect if authenticated), `auth` (redirect if not), `prevent.back` (cache control)
+- **Login/Register**: AJAX with fetch API, toast notifications, button state changes
+- **Session**: Laravel session management with CSRF protection
+- **Back button prevention**: `history.pushState()` + `window.onpopstate` in all authenticated pages
 
-### Styling Changes
-- Auth page styles: `public/css/auth.css`
-- Landing page styles: `public/css/landing.css`
-- Maintain color scheme (gray/black cards, green/blue background)
-- Keep button disabled state styling (opacity: 0.6, cursor: not-allowed)
-- Never embed `<style>` tags in Blade templates - always use external CSS files
+### Route Groups Pattern
+```php
+// Guest routes
+Route::middleware(['guest', 'prevent.back'])->group(function () {
+    Route::get('/', [AuthController::class, 'showLogin'])->name('login');
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+});
+
+// Authenticated routes
+Route::middleware(['auth', 'prevent.back'])->group(function () {
+    Route::get('/landing', [AuthController::class, 'showLanding'])->name('landing');
+    Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
+    Route::post('/logout', [AuthController::class, 'logout']);
+    // Chat endpoints
+    Route::get('/api/chat/conversations', [ChatController::class, 'getConversations']);
+    Route::post('/api/chat/send', [ChatController::class, 'sendMessage']);
+    Route::get('/api/chat/fetch-since', [ChatController::class, 'fetchMessagesSince']);
+    Route::get('/api/long-poll', [LongPollController::class, 'poll']);
+});
+```
+
+## UI Design System
+- **Colors**: Green (#28a745), Sky Blue (#87ceeb), Dark Gray (#4a4a4a), Black (#2a2a2a)
+- **Gradients**: `linear-gradient(135deg, #28a745, #87ceeb)` for backgrounds
+- **Cards**: Floating with `box-shadow`, `border-radius: 10-15px`
+- **Buttons**: Gradient on primary, solid on secondary, `:disabled` state with `opacity: 0.6`
+- **Responsive**: Mobile-first with breakpoints at 599px, 767px, 1199px
+
+## Common Development Tasks
+
+### Adding a Chat Feature
+1. Add endpoint in `ChatController` using `MessageService`
+2. Update `landing.js` with fetch call and DOM manipulation
+3. Add CSS to `landing.css` (never inline `<style>` tags)
+4. Test with localStorage persistence if applicable
+5. Ensure CSRF token included in all POST requests
+
+### Modifying Appearance/Theming
+- Use `setProperty('property', value, 'important')` to override CSS
+- Set both shorthand (`background`) and longhand (`background-color`) properties
+- Store in localStorage for persistence
+- Apply on page load before DOMContentLoaded
+
+### Database Changes
+```bash
+php artisan make:migration add_field_to_table --table=tablename
+# Edit migration, add to $fillable in model
+php artisan migrate
+```
+
+### Asset Compilation
+```bash
+npm run dev          # Development with hot reload
+npm run build        # Production build
+php artisan serve    # Start development server (port 8000)
+```
+
+## Critical Conventions
+1. **Never embed CSS/JS in Blade** - always use external files
+2. **Always use MessageService** for sending messages - never direct Message::create()
+3. **localStorage persistence** for all user preferences
+4. **Toast notifications** for user feedback (3-second auto-dismiss)
+5. **CSRF token** required on all POST/PATCH/DELETE requests
+6. **Responsive design** - test mobile (599px), tablet (767px), desktop (1199px+)
+7. **Escape HTML** in messages: `escapeHtml(text)` function to prevent XSS
+8. **ISO8601 timestamps** for all date/time data from backend
+9. **Empty states** for no messages/conversations with helpful messaging

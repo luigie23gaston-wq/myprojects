@@ -184,8 +184,13 @@ saveImageBtn.addEventListener('click', () => {
     .then(data => {
         if (data.success) {
             showToast(data.message);
-            // Update profile image
+            // Update profile image in main card
             profileImageDisplay.innerHTML = `<img src="${data.imageUrl}" alt="Profile">`;
+            // Update navbar profile image
+            const navbarProfileImage = document.querySelector('.user-profile-image');
+            if (navbarProfileImage) {
+                navbarProfileImage.innerHTML = `<img src="${data.imageUrl}" alt="Profile">`;
+            }
             // Reset upload section
             uploadSection.classList.add('hidden');
             editSection.classList.remove('hidden');
@@ -291,7 +296,13 @@ confirmHistoryBtn.addEventListener('click', () => {
     .then(data => {
         if (data.success) {
             showToast(data.message);
+            // Update profile image in main card
             profileImageDisplay.innerHTML = `<img src="${data.imageUrl}" alt="Profile">`;
+            // Update navbar profile image
+            const navbarProfileImage = document.querySelector('.user-profile-image');
+            if (navbarProfileImage) {
+                navbarProfileImage.innerHTML = `<img src="${data.imageUrl}" alt="Profile">`;
+            }
             confirmHistoryModal.classList.remove('show');
             selectedHistoryImageId = null;
         } else {

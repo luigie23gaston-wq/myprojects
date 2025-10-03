@@ -18,10 +18,3 @@ yarn-error.log
 /.idea
 /.vscode
 
-/vendor
-/node_modules
-/public/storage
-/storage/*.key
-.env
-.idea
-/.vscode
