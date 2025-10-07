@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
 use App\Models\Message;
 use App\Models\Conversation;
 use App\Models\User;
@@ -115,36 +116,41 @@ class ChatController extends Controller
     }
     
     /**
-     * Get conversations list
+     * Get conversations list with caching
      */
     public function getConversations()
     {
         $currentUserId = Auth::id();
         
-        $conversations = Conversation::where('user_id', $currentUserId)
-            ->with(['contact:id,username,firstname,lastname,image'])
-            ->get()
-            ->map(function ($conversation) use ($currentUserId) {
-                $lastMessage = Message::betweenUsers($currentUserId, $conversation->contact_id)
-                    ->latest()
-                    ->first();
-                
-                $unreadCount = Message::where('sender_id', $conversation->contact_id)
-                    ->where('receiver_id', $currentUserId)
-                    ->whereNull('read_at')
-                    ->count();
-                
-                return [
-                    'id' => $conversation->contact->id,
-                    'username' => $conversation->contact->username,
-                    'firstname' => $conversation->contact->firstname,
-                    'lastname' => $conversation->contact->lastname,
-                    'image' => $conversation->contact->image,
-                    'last_message' => $lastMessage ? $lastMessage->message : null,
-                    'last_message_time' => $lastMessage ? $lastMessage->created_at->diffForHumans() : null,
-                    'unread_count' => $unreadCount,
-                ];
-            });
+        // Cache conversations for 30 seconds to reduce database load
+        $cacheKey = "user:{$currentUserId}:conversations";
+        
+        $conversations = Cache::remember($cacheKey, 30, function () use ($currentUserId) {
+            return Conversation::where('user_id', $currentUserId)
+                ->with(['contact:id,username,firstname,lastname,image'])
+                ->get()
+                ->map(function ($conversation) use ($currentUserId) {
+                    $lastMessage = Message::betweenUsers($currentUserId, $conversation->contact_id)
+                        ->latest()
+                        ->first();
+                    
+                    $unreadCount = Message::where('sender_id', $conversation->contact_id)
+                        ->where('receiver_id', $currentUserId)
+                        ->whereNull('read_at')
+                        ->count();
+                    
+                    return [
+                        'id' => $conversation->contact->id,
+                        'username' => $conversation->contact->username,
+                        'firstname' => $conversation->contact->firstname,
+                        'lastname' => $conversation->contact->lastname,
+                        'image' => $conversation->contact->image,
+                        'last_message' => $lastMessage ? $lastMessage->message : null,
+                        'last_message_time' => $lastMessage ? $lastMessage->created_at->diffForHumans() : null,
+                        'unread_count' => $unreadCount,
+                    ];
+                });
+        });
         
         return response()->json([
             'success' => true,
@@ -186,25 +192,29 @@ class ChatController extends Controller
     }
     
     /**
-     * Fetch new messages since a specific message ID (for Redis-based polling)
+     * Fetch new messages since a specific message ID (optimized for polling)
      */
     public function fetchMessagesSince(Request $request)
     {
         $lastMessageId = $request->input('last_message_id', 0);
         $currentUserId = Auth::id();
         
-        // Query for new messages sent to the current user
+        // Optimized query using composite index (receiver_id, id)
         $newMessages = Message::where('receiver_id', $currentUserId)
             ->where('id', '>', $lastMessageId)
             ->with(['sender:id,username,firstname,lastname,image'])
             ->orderBy('id', 'asc')
+            ->limit(50) // Limit to prevent memory issues
             ->get();
         
-        // Mark new messages as read
+        // Mark new messages as read (batch update)
         if ($newMessages->isNotEmpty()) {
             Message::whereIn('id', $newMessages->pluck('id'))
                 ->whereNull('read_at')
                 ->update(['read_at' => now()]);
+            
+            // Clear conversation cache when new messages arrive
+            Cache::forget("user:{$currentUserId}:conversations");
         }
         
         $latestId = $newMessages->isNotEmpty() ? $newMessages->last()->id : $lastMessageId;
@@ -232,7 +242,7 @@ class ChatController extends Controller
     }
     
     /**
-     * Send a message using MessageService with Redis notification
+     * Send a message using MessageService with WebSocket broadcast + Redis notification
      */
     public function sendMessage(Request $request)
     {
@@ -248,12 +258,18 @@ class ChatController extends Controller
             ], 422);
         }
         
-        // Use MessageService to send message and set Redis notification
+        $currentUserId = Auth::id();
+        
+        // Use MessageService to send message with WebSocket broadcast
         $message = $this->messageService->sendMessage(
-            Auth::id(),
+            $currentUserId,
             $request->receiver_id,
             $request->message
         );
+        
+        // Clear conversation cache for both sender and receiver
+        Cache::forget("user:{$currentUserId}:conversations");
+        Cache::forget("user:{$request->receiver_id}:conversations");
         
         return response()->json([
             'success' => true,

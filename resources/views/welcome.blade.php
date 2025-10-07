@@ -31,7 +31,10 @@
                     </div>
                     <div class="form-group">
                         <label for="loginPassword">Password</label>
-                        <input type="password" id="loginPassword" placeholder="Enter your password">
+                        <div class="password-input-wrapper">
+                            <input type="password" id="loginPassword" placeholder="Enter your password">
+                            <span class="password-toggle" id="loginPasswordToggle">👁️</span>
+                        </div>
                     </div>
                     <button type="button" class="btn" id="loginBtn" disabled>Login</button>
                     <div class="auth-link">
@@ -62,12 +65,24 @@
                     </div>
                     <div class="form-group">
                         <label for="regPassword">Password</label>
-                        <input type="password" id="regPassword" placeholder="Enter password">
-                        <div class="password-strength" id="passwordStrength"></div>
+                        <div class="password-input-wrapper">
+                            <input type="password" id="regPassword" placeholder="Enter password">
+                            <span class="password-toggle" id="regPasswordToggle">👁️</span>
+                        </div>
+                        <div class="password-strength-container">
+                            <div class="password-strength-bar">
+                                <div class="password-strength-fill" id="passwordStrengthFill"></div>
+                            </div>
+                            <div class="password-strength-text" id="passwordStrengthText"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="regConfirmPassword">Confirm Password</label>
-                        <input type="password" id="regConfirmPassword" placeholder="Confirm password">
+                        <div class="password-input-wrapper">
+                            <input type="password" id="regConfirmPassword" placeholder="Confirm password">
+                            <span class="password-toggle" id="regConfirmPasswordToggle">👁️</span>
+                        </div>
+                        <div class="password-match-indicator" id="passwordMatchIndicator"></div>
                     </div>
                     <button type="button" class="btn" id="registerBtn" disabled>Register</button>
                     <div class="auth-link">

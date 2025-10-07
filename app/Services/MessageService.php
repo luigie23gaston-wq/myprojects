@@ -3,13 +3,14 @@
 namespace App\Services;
 
 use App\Models\Message;
+use App\Events\MessageSent;
 use Illuminate\Support\Facades\Cache;
 
 class MessageService
 {
     /**
      * Send a message and set cache notification for receiver
-     * Using Laravel Cache (can use Redis when available)
+     * Broadcasting via WebSocket + Cache notification for long polling fallback
      * 
      * @param int $senderId
      * @param int $receiverId
@@ -25,7 +26,13 @@ class MessageService
             'message' => $messageText,
         ]);
         
-        // Set cache notification flag for the receiver
+        // Load sender relationship for broadcasting
+        $message->load('sender:id,username,firstname,lastname,image');
+        
+        // Broadcast via WebSocket (Soketi/Pusher)
+        broadcast(new MessageSent($message))->toOthers();
+        
+        // Set cache notification flag for the receiver (fallback for long polling)
         $this->notifyUser($receiverId, $message->id);
         
         return $message;

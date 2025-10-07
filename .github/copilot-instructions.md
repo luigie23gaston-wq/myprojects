@@ -46,7 +46,7 @@ app/Models/
   └── ImageHistory.php       # user_id, image_path, created_at
 
 database/
-  ├── database.sqlite        # SQLite database file
+  ├── database.sqlite        # SQLite database file (primary data storage)
   └── migrations/            # Schema definitions
 ```
 
@@ -63,12 +63,12 @@ while ($timeout) {
     sleep(1);
 }
 
-// ✅ CORRECT - Cache/Redis notification polling
+// ✅ CORRECT - Cache/Redis notification polling (LongPollController.php)
 while ($timeout) {
-    $hasNotification = Cache::get("chat:user:{$userId}:new_messages");
-    if ($hasNotification) {
-        Cache::forget($key); // Clear flag
-        return ['has_new_messages' => true];
+    $latestId = $this->messageService->checkNotification($currentUserId);
+    if ($latestId !== null) {
+        $this->messageService->clearNotification($currentUserId);
+        return ['has_new_messages' => true, 'new_messages_since_id' => $lastMessageId];
     }
     sleep(1);
 }
@@ -99,24 +99,24 @@ Separated "wait loop" from "data fetch":
 ```javascript
 // 1. Lightweight polling - checks Cache only (no DB queries)
 function pollForMessages(lastId) {
-    fetch(`/api/long-poll?last_id=${lastId}&user_id=${currentChatUserId}`)
+    fetch(`/api/chat/poll?last_message_id=${lastId}`)
         .then(response => response.json())
         .then(data => {
-            if (data.has_new_messages) {
-                fetchAndDisplayMessages(lastMessageId); // Separate DB query
+            if (data.success && data.has_new_messages) {
+                fetchAndDisplayMessages(lastId); // Separate DB query
             } else {
-                pollForMessages(lastMessageId); // Continue polling
+                pollForMessages(data.latest_id || lastId); // Continue polling
             }
         });
 }
 
 // 2. Actual data fetch - only when notified
 function fetchAndDisplayMessages(lastId) {
-    fetch(`/api/chat/fetch-since?last_id=${lastId}&user_id=${currentChatUserId}`)
+    fetch(`/api/chat/fetch-since?last_message_id=${lastId}`)
         .then(response => response.json())
         .then(data => {
-            data.messages.forEach(msg => appendMessage(msg, isOwn, senderData));
-            pollForMessages(newLastId); // Resume polling
+            data.messages.forEach(msg => appendMessage(msg, false, senderData));
+            pollForMessages(data.latest_id || lastId); // Resume polling
         });
 }
 ```
@@ -256,10 +256,10 @@ statusModal.addEventListener('click', (e) => {
 - **Trash Confirmation**: Delete conversation with danger styling
 
 ## Authentication Flow
-- **Middleware**: `guest` (redirect if authenticated), `auth` (redirect if not), `prevent.back` (cache control)
+- **Middleware**: `guest` (redirect if authenticated), `auth` (redirect if not), `prevent.back` (PreventBackHistory - cache control headers)
 - **Login/Register**: AJAX with fetch API, toast notifications, button state changes
 - **Session**: Laravel session management with CSRF protection
-- **Back button prevention**: `history.pushState()` + `window.onpopstate` in all authenticated pages
+- **Back button prevention**: `history.pushState()` + `window.onpopstate` in all authenticated pages + server-side cache headers
 
 ### Route Groups Pattern
 ```php
@@ -275,11 +275,17 @@ Route::middleware(['auth', 'prevent.back'])->group(function () {
     Route::get('/landing', [AuthController::class, 'showLanding'])->name('landing');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
     Route::post('/logout', [AuthController::class, 'logout']);
+    // Profile endpoints
+    Route::post('/profile/upload-image', [ProfileController::class, 'uploadImage']);
+    Route::post('/profile/update-info', [ProfileController::class, 'updateInfo']);
+    Route::get('/profile/image-history', [ProfileController::class, 'getImageHistory']);
     // Chat endpoints
+    Route::get('/api/chat/search', [ChatController::class, 'searchUsers']);
     Route::get('/api/chat/conversations', [ChatController::class, 'getConversations']);
+    Route::get('/api/chat/messages/{userId}', [ChatController::class, 'getMessages']);
     Route::post('/api/chat/send', [ChatController::class, 'sendMessage']);
     Route::get('/api/chat/fetch-since', [ChatController::class, 'fetchMessagesSince']);
-    Route::get('/api/long-poll', [LongPollController::class, 'poll']);
+    Route::get('/api/chat/poll', [LongPollController::class, 'fetchNewMessages']);
 });
 ```
 
@@ -312,11 +318,22 @@ php artisan make:migration add_field_to_table --table=tablename
 php artisan migrate
 ```
 
-### Asset Compilation
+### Development Commands
 ```bash
+# Asset compilation (Vite)
 npm run dev          # Development with hot reload
-npm run build        # Production build
-php artisan serve    # Start development server (port 8000)
+npm run build        # Production build for deployment
+
+# Laravel development server
+php artisan serve    # Start server on http://localhost:8000
+
+# Database operations
+php artisan migrate           # Run migrations
+php artisan migrate:rollback  # Rollback last migration batch
+php artisan tinker           # Interactive Laravel shell
+
+# Cache operations (for Redis/Cache debugging)
+php artisan cache:clear      # Clear application cache
 ```
 
 ## Critical Conventions

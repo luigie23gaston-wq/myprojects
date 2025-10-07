@@ -192,6 +192,28 @@
         <!-- Toast Notification -->
         <div class="toast" id="toast"></div>
 
+        <!-- Vite Assets for WebSocket (Laravel Echo) -->
+        @vite(['resources/js/app.js'])
+        
+        <!-- Echo Setup for WebSocket -->
+        <script src="{{ asset('js/echo-setup.js') }}"></script>
+        
+        <!-- Main Landing JS -->
         <script src="{{ asset('js/landing.js') }}"></script>
+        
+        <!-- Initialize WebSocket for current user -->
+        <script>
+            // Initialize WebSocket connection for authenticated user
+            const currentAuthUserId = {{ Auth::id() }};
+            
+            document.addEventListener('DOMContentLoaded', function() {
+                // Try to initialize WebSocket
+                const wsInitialized = initializeWebSocket(currentAuthUserId);
+                
+                if (!wsInitialized) {
+                    console.log('[App] WebSocket not available, using optimized long polling');
+                }
+            });
+        </script>
     </body>
 </html>
