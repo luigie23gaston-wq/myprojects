@@ -35,7 +35,14 @@ const regEmail = document.getElementById('regEmail');
 const regPassword = document.getElementById('regPassword');
 const regConfirmPassword = document.getElementById('regConfirmPassword');
 const registerBtn = document.getElementById('registerBtn');
-const passwordStrength = document.getElementById('passwordStrength');
+const passwordStrengthFill = document.getElementById('passwordStrengthFill');
+const passwordStrengthText = document.getElementById('passwordStrengthText');
+const passwordMatchIndicator = document.getElementById('passwordMatchIndicator');
+
+// Password toggle elements
+const loginPasswordToggle = document.getElementById('loginPasswordToggle');
+const regPasswordToggle = document.getElementById('regPasswordToggle');
+const regConfirmPasswordToggle = document.getElementById('regConfirmPasswordToggle');
 
 // Toast notification function
 function showToast(message, type = 'success') {
@@ -73,6 +80,13 @@ function validateLoginForm() {
 
 loginUsername.addEventListener('input', validateLoginForm);
 loginPassword.addEventListener('input', validateLoginForm);
+
+// Password visibility toggle for login
+loginPasswordToggle.addEventListener('click', () => {
+    const type = loginPassword.type === 'password' ? 'text' : 'password';
+    loginPassword.type = type;
+    loginPasswordToggle.textContent = type === 'password' ? '👁️' : '🙈';
+});
 
 // Login button action
 loginBtn.addEventListener('click', () => {
@@ -126,6 +140,9 @@ loginBtn.addEventListener('click', () => {
 // Password strength checker
 function checkPasswordStrength(password) {
     if (password.length < 3) {
+        passwordStrengthFill.className = 'password-strength-fill';
+        passwordStrengthText.className = 'password-strength-text';
+        passwordStrengthText.textContent = '';
         return { strength: '', text: '' };
     }
     
@@ -136,20 +153,67 @@ function checkPasswordStrength(password) {
     if (/[^a-zA-Z0-9]/.test(password)) strength++;
     
     if (strength <= 1) {
+        passwordStrengthFill.className = 'password-strength-fill weak';
+        passwordStrengthText.className = 'password-strength-text weak';
+        passwordStrengthText.textContent = '⚠️ Weak password';
         return { strength: 'weak', text: 'Weak password' };
     } else if (strength === 2 || strength === 3) {
+        passwordStrengthFill.className = 'password-strength-fill medium';
+        passwordStrengthText.className = 'password-strength-text medium';
+        passwordStrengthText.textContent = '⚡ Medium password';
         return { strength: 'medium', text: 'Medium password' };
     } else {
+        passwordStrengthFill.className = 'password-strength-fill strong';
+        passwordStrengthText.className = 'password-strength-text strong';
+        passwordStrengthText.textContent = '✓ Strong password';
         return { strength: 'strong', text: 'Strong password' };
     }
 }
 
 regPassword.addEventListener('input', () => {
     const password = regPassword.value;
-    const result = checkPasswordStrength(password);
-    passwordStrength.className = 'password-strength ' + result.strength;
-    passwordStrength.textContent = result.text;
+    checkPasswordStrength(password);
+    checkPasswordMatch();
     validateRegisterForm();
+});
+
+// Password match checker
+function checkPasswordMatch() {
+    const password = regPassword.value;
+    const confirmPassword = regConfirmPassword.value;
+    
+    if (confirmPassword.length === 0) {
+        passwordMatchIndicator.className = 'password-match-indicator';
+        passwordMatchIndicator.textContent = '';
+        return;
+    }
+    
+    if (password === confirmPassword) {
+        passwordMatchIndicator.className = 'password-match-indicator match';
+        passwordMatchIndicator.textContent = '✓ Passwords match';
+    } else {
+        passwordMatchIndicator.className = 'password-match-indicator no-match';
+        passwordMatchIndicator.textContent = '✗ Passwords do not match';
+    }
+}
+
+regConfirmPassword.addEventListener('input', () => {
+    checkPasswordMatch();
+    validateRegisterForm();
+});
+
+// Password visibility toggle for register password
+regPasswordToggle.addEventListener('click', () => {
+    const type = regPassword.type === 'password' ? 'text' : 'password';
+    regPassword.type = type;
+    regPasswordToggle.textContent = type === 'password' ? '👁️' : '🙈';
+});
+
+// Password visibility toggle for confirm password
+regConfirmPasswordToggle.addEventListener('click', () => {
+    const type = regConfirmPassword.type === 'password' ? 'text' : 'password';
+    regConfirmPassword.type = type;
+    regConfirmPasswordToggle.textContent = type === 'password' ? '👁️' : '🙈';
 });
 
 // Register validation
@@ -177,8 +241,6 @@ regUsername.addEventListener('input', validateRegisterForm);
 regFirstname.addEventListener('input', validateRegisterForm);
 regLastname.addEventListener('input', validateRegisterForm);
 regEmail.addEventListener('input', validateRegisterForm);
-regPassword.addEventListener('input', validateRegisterForm);
-regConfirmPassword.addEventListener('input', validateRegisterForm);
 
 // Register button action
 registerBtn.addEventListener('click', () => {

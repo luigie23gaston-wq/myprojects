@@ -40,6 +40,7 @@ body {
 
 .form-group {
     margin-bottom: 20px;
+    position: relative;
 }
 
 .form-group label {
@@ -57,6 +58,31 @@ body {
     background: #2a2a2a;
     color: #fff;
     font-size: 14px;
+}
+
+/* Password input with eye icon */
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    padding-right: 45px;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 12px;
+    cursor: pointer;
+    font-size: 20px;
+    user-select: none;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.password-toggle:hover {
+    opacity: 1;
 }
 
 .form-group input:focus {
@@ -107,6 +133,95 @@ body {
 
 .hidden {
     display: none !important;
+}
+
+/* Password Strength Progress Bar */
+.password-strength-container {
+    margin-top: 8px;
+}
+
+.password-strength-bar {
+    width: 100%;
+    height: 6px;
+    background: #2a2a2a;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 5px;
+}
+
+.password-strength-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease, background-color 0.3s ease;
+    border-radius: 3px;
+}
+
+.password-strength-fill.weak {
+    width: 33%;
+    background: linear-gradient(90deg, #ff6b6b, #ff8787);
+    animation: pulse-weak 2s infinite;
+}
+
+.password-strength-fill.medium {
+    width: 66%;
+    background: linear-gradient(90deg, #ffa500, #ffb733);
+    animation: pulse-medium 2s infinite;
+}
+
+.password-strength-fill.strong {
+    width: 100%;
+    background: linear-gradient(90deg, #28a745, #4caf50);
+    animation: pulse-strong 2s infinite;
+}
+
+@keyframes pulse-weak {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+@keyframes pulse-medium {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+@keyframes pulse-strong {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.9; }
+}
+
+.password-strength-text {
+    font-size: 12px;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+.password-strength-text.weak {
+    color: #ff6b6b;
+}
+
+.password-strength-text.medium {
+    color: #ffa500;
+}
+
+.password-strength-text.strong {
+    color: #28a745;
+}
+
+/* Password Match Indicator */
+.password-match-indicator {
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 18px;
+    transition: all 0.3s ease;
+}
+
+.password-match-indicator.match {
+    color: #28a745;
+}
+
+.password-match-indicator.no-match {
+    color: #ff6b6b;
 }
 
 .password-strength {

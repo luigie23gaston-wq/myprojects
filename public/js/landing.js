@@ -98,12 +98,30 @@ const sidebarSearch = document.getElementById('sidebarSearch');
 const chatSearchInput = document.getElementById('chatSearchInput');
 const searchToggleBtn = document.getElementById('searchToggleBtn');
 
-// Chat state
+// Chat state (exposed to window for WebSocket access)
+window.currentChatUserId = null;
+window.lastMessageId = 0;
+window.isPolling = false;
+
 let currentChatUserId = null;
 let currentChatUserData = null; // Store current contact's data (name, image, etc.)
 let currentUserData = null; // Store logged-in user's data
 let lastMessageId = 0;
 let isPolling = false;
+
+// Sync local variables with window
+function syncChatState() {
+    currentChatUserId = window.currentChatUserId;
+    lastMessageId = window.lastMessageId;
+    isPolling = window.isPolling;
+}
+
+function updateChatState(chatUserId, msgId, polling) {
+    window.currentChatUserId = chatUserId !== undefined ? chatUserId : window.currentChatUserId;
+    window.lastMessageId = msgId !== undefined ? msgId : window.lastMessageId;
+    window.isPolling = polling !== undefined ? polling : window.isPolling;
+    syncChatState();
+}
 
 // Get current user data from the page
 document.addEventListener('DOMContentLoaded', () => {
@@ -401,7 +419,11 @@ function sendMessage() {
             // Update last message ID
             if (data.message.id > lastMessageId) {
                 lastMessageId = data.message.id;
+                updateChatState(undefined, lastMessageId, undefined);
             }
+            
+            // Reload conversations to show updated last message
+            loadConversations();
         }
     })
     .catch(error => {
@@ -493,6 +515,9 @@ function appendMessage(message, isOwn = false, senderData = null) {
     messageArea.scrollTop = messageArea.scrollHeight;
 }
 
+// Expose appendMessage to window for WebSocket access
+window.appendMessage = appendMessage;
+
 // Show empty state in message area
 function showEmptyState() {
     messageArea.innerHTML = `
@@ -506,6 +531,8 @@ function showEmptyState() {
 
 // Redis-based Long Polling - Only waits for notifications
 function pollForMessages(lastId) {
+    syncChatState(); // Sync from window state
+    
     if (!isPolling) return;
     
     fetch(`/api/chat/poll?last_message_id=${lastId}`, {
@@ -532,6 +559,9 @@ function pollForMessages(lastId) {
     });
 }
 
+// Expose pollForMessages to window for WebSocket fallback
+window.pollForMessages = pollForMessages;
+
 // Fetch and display new messages (separate database query)
 function fetchAndDisplayMessages(lastId) {
     fetch(`/api/chat/fetch-since?last_message_id=${lastId}`, {
@@ -546,8 +576,8 @@ function fetchAndDisplayMessages(lastId) {
         if (data.success && data.messages.length > 0) {
             // Display new messages
             data.messages.forEach(msg => {
-                // Only show messages for current chat
-                if (msg.sender_id === currentChatUserId) {
+                // Only show messages for current chat (both incoming and outgoing)
+                if (msg.sender_id === currentChatUserId || msg.receiver_id === currentChatUserId) {
                     // Prepare sender data
                     const senderData = msg.sender ? {
                         username: msg.sender.username,
@@ -555,13 +585,15 @@ function fetchAndDisplayMessages(lastId) {
                         initial: msg.sender.firstname ? msg.sender.firstname.charAt(0).toUpperCase() : msg.sender.username.charAt(0).toUpperCase()
                     } : null;
                     
-                    appendMessage(msg, false, senderData);
+                    const isOwn = msg.sender_id !== currentChatUserId;
+                    appendMessage(msg, isOwn, senderData);
                 }
             });
             
             // Update last message ID
             if (data.latest_id > lastMessageId) {
                 lastMessageId = data.latest_id;
+                updateChatState(undefined, lastMessageId, undefined);
             }
         }
         
@@ -577,6 +609,10 @@ function fetchAndDisplayMessages(lastId) {
 
 // Load conversation messages
 function loadConversation(userId) {
+    // Stop previous polling before loading new conversation
+    isPolling = false;
+    updateChatState(userId, 0, false);
+    
     currentChatUserId = userId;
     
     fetch(`/api/chat/messages/${userId}`, {
@@ -592,6 +628,10 @@ function loadConversation(userId) {
             // Clear message area
             messageArea.innerHTML = '';
             
+            // Reset last message ID
+            lastMessageId = 0;
+            updateChatState(undefined, 0, undefined);
+            
             // Check if there are messages
             if (data.messages.length === 0) {
                 // Show empty state
@@ -606,14 +646,18 @@ function loadConversation(userId) {
                     // Update last message ID
                     if (msg.id > lastMessageId) {
                         lastMessageId = msg.id;
+                        updateChatState(undefined, lastMessageId, undefined);
                     }
                 });
             }
             
-            // Start polling if not already polling
-            if (!isPolling) {
+            // Start fresh polling for this conversation (only if WebSocket not active)
+            if (typeof window.isWebSocketActive !== 'function' || !window.isWebSocketActive()) {
                 isPolling = true;
+                updateChatState(undefined, undefined, true);
                 pollForMessages(lastMessageId);
+            } else {
+                console.log('[Chat] WebSocket active, skipping long polling');
             }
         }
     })
@@ -641,6 +685,9 @@ function loadConversations() {
         console.error('Load conversations error:', error);
     });
 }
+
+// Expose loadConversations to window for WebSocket access
+window.loadConversations = loadConversations;
 
 // Display conversations in sidebar
 function displayConversations(conversations) {
